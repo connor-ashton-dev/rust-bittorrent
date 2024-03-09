@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, iter::Peekable, str::Chars};
 
 // Available if you need it!
 // use serde_bencode
@@ -18,8 +18,7 @@ fn parse_ben_int(encoded_value: &str) -> serde_json::Value {
     serde_json::Value::Number(serde_json::Number::from(num))
 }
 
-fn parse_ben_list(encoded_value: &str) -> serde_json::Value {
-    let mut iter = encoded_value.chars().peekable();
+fn parse_ben_list(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
     let mut items: Vec<serde_json::Value> = vec![];
 
     while let Some(c) = iter.next() {
@@ -49,6 +48,11 @@ fn parse_ben_list(encoded_value: &str) -> serde_json::Value {
             }
             let num = res.parse::<i64>().unwrap();
             items.push(serde_json::Value::Number(serde_json::Number::from(num)));
+
+            // Another list
+        } else if c == 'l' {
+            let new_items = parse_ben_list(iter);
+            items.push(new_items);
         }
     }
 
@@ -57,12 +61,14 @@ fn parse_ben_list(encoded_value: &str) -> serde_json::Value {
 
 #[allow(dead_code)]
 fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
+    let mut iter = encoded_value.chars().peekable();
     if encoded_value.chars().next().unwrap().is_ascii_digit() {
         parse_ben_string(encoded_value)
     } else if encoded_value.starts_with('i') && encoded_value.ends_with('e') {
         parse_ben_int(encoded_value)
     } else if encoded_value.starts_with('l') && encoded_value.ends_with('e') {
-        parse_ben_list(encoded_value)
+        iter.next();
+        parse_ben_list(&mut iter)
     } else {
         panic!("Unhandled encoded value: {encoded_value}")
     }
