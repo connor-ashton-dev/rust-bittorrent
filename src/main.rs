@@ -15,7 +15,7 @@ fn parse_ben_string(encoded_value: &str) -> serde_json::Value {
 fn parse_ben_int(encoded_value: &str) -> serde_json::Value {
     let num_str = &encoded_value[1..encoded_value.find('e').unwrap()];
     let num = num_str.parse::<i64>().unwrap();
-    serde_json::json!(num)
+    serde_json::Value::Number(serde_json::Number::from(num))
 }
 
 fn parse_ben_list(encoded_value: &str) -> serde_json::Value {
@@ -47,7 +47,8 @@ fn parse_ben_list(encoded_value: &str) -> serde_json::Value {
                 res.push(cur_char);
                 cur_char = iter.next().unwrap();
             }
-            items.push(serde_json::json!(res));
+            let num = res.parse::<i64>().unwrap();
+            items.push(serde_json::Value::Number(serde_json::Number::from(num)));
         }
     }
 
