@@ -53,6 +53,8 @@ fn parse_ben_list(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
         } else if c == 'l' {
             let new_items = parse_ben_list(iter);
             items.push(new_items);
+        } else if c == 'e' {
+            return serde_json::json!(items);
         }
     }
 
