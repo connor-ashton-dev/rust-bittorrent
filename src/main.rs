@@ -104,7 +104,7 @@ fn main() {
 
         let mut hasher = Sha1::new();
         hasher.update(&encoded);
-        let hash = hasher.finalize();
+        let hash = hasher.finalize().to_vec();
 
         println!(
             "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
