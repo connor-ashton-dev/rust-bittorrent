@@ -1,5 +1,7 @@
 use std::{collections::HashMap, env, fs, iter::Peekable};
 
+use sha1::{Digest, Sha1};
+
 fn parse_ben_string<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> String {
     let mut length_str = Vec::new();
     loop {
@@ -97,10 +99,15 @@ fn main() {
         let bytes = fs::read(file_name).unwrap();
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
+        let info = decoded_value["info"].clone();
+        let mut hasher = Sha1::new();
+        hasher.update(serde_json::to_vec(&info).unwrap());
+        let hash = hasher.finalize();
         println!(
-            "Tracker URL: {}\nLength: {}",
+            "Tracker URL: {}\nLength: {}\nInfo Hash: {:x}",
             decoded_value["announce"].as_str().unwrap(),
-            decoded_value["info"]["length"]
+            decoded_value["info"]["length"],
+            hash
         );
     } else {
         println!("unknown command: {}", args[1]);
