@@ -71,9 +71,17 @@ fn parse_ben_dict(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
 
     while let Some(char) = iter.next() {
         let mut tmp_val = String::new();
-        if char.is_ascii_digit() && iter.peek().unwrap() == &':' {
-            let length = char.to_digit(10).unwrap();
-            iter.next();
+        if char.is_ascii_digit() {
+            let mut length_str = String::new();
+            let mut cur_char = char;
+
+            while cur_char != ':' {
+                length_str.push(cur_char);
+                cur_char = iter.next().unwrap();
+            }
+
+            let length = length_str.parse::<i32>().expect(&length_str);
+
             for _ in 0..length {
                 let new_char = iter.next().unwrap();
                 tmp_val.push(new_char);
@@ -87,7 +95,6 @@ fn parse_ben_dict(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
                 cur_char = iter.next().unwrap();
             }
             val = res;
-        } else {
         }
 
         if is_key {
