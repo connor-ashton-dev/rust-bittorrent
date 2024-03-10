@@ -269,17 +269,17 @@ fn main() -> Result<()> {
 
         Ok(())
     } else if command == "download_piece" {
-        let output_path = &args[3];
-        let file_name = &args[4];
+        let output_path = &args[2];
+        let file_name = &args[3];
         let piece_index: usize = args[4].parse()?;
 
         // 1. Read the torrent file
         let bytes = fs::read(file_name)?;
-        let torrent: TorrentFile = serde_bencode::from_bytes(&bytes)?;
+        let torrent: TorrentFile = from_bytes(&bytes)?;
 
         let info = &torrent.info;
-        let piece_length = info.piece_length;
-        let total_length = info.length;
+        let piece_length = info["piece length"].as_i64().unwrap() as usize;
+        let total_length = info["length"].as_i64().unwrap() as usize;
         let num_pieces = (total_length + piece_length - 1) / piece_length;
 
         let this_piece_length = if piece_index < num_pieces - 1 {
@@ -288,19 +288,18 @@ fn main() -> Result<()> {
             total_length - (num_pieces - 1) * piece_length
         };
 
-        let info_encoded = serde_bencode::to_bytes(&info)?;
+        let info_encoded = to_bytes(&info)?;
         let mut hasher = Sha1::new();
         hasher.update(&info_encoded);
         let info_hash: [u8; 20] = hasher.finalize().try_into()?;
 
         // 2. Perform the tracker request
-
         let request: QueryParams = QueryParams {
             peer_id: "00112233445566778899".to_string(),
             port: 6881,
             uploaded: 0,
             downloaded: 0,
-            left: torrent.info.piece_length,
+            left: torrent.info["piece length"].as_i64().unwrap() as u64,
             compact: 1,
         };
 
@@ -315,11 +314,10 @@ fn main() -> Result<()> {
 
         let res = reqwest::blocking::get(tracker_url)?;
         let body = res.bytes()?;
-        let decoded: TrackerResponse = serde_bencode::from_bytes(&body)?;
-        let peers = parse_ips(&decoded.peers);
+        let decoded: TrackerResponse = from_bytes(&body)?;
+        let peers = parse_ips(&decoded.peers.into_bytes());
 
         // 3. Establish a connection with a peer and perform the handshake
-
         let peer = &peers[0];
         let p_string = "BitTorrent protocol";
         let reserved_bytes = [0; 8];
@@ -328,7 +326,7 @@ fn main() -> Result<()> {
         let mut hasher = Sha1::new();
         hasher.update(&info_encoded);
         let handshake = Handshake {
-            length_p_string: p_string.len(),
+            length_p_string: p_string.len() as u8,
             p_string: p_string.to_string(),
             reserved_bytes: reserved_bytes.into(),
             sha1_infohash: info_hash.into(),
@@ -336,14 +334,13 @@ fn main() -> Result<()> {
         };
 
         let mut handshake_bytes = Vec::new();
-        handshake_bytes.push(handshake.length_p_string as u8);
+        handshake_bytes.push(handshake.length_p_string);
         handshake_bytes.extend(handshake.p_string.as_bytes());
         handshake_bytes.extend(&handshake.reserved_bytes);
         handshake_bytes.extend(&handshake.sha1_infohash);
         handshake_bytes.extend(&handshake.peer_id);
 
         let mut stream = TcpStream::connect(peer)?;
-
         stream.write_all(&handshake_bytes)?;
 
         let mut response = [0; 68];
@@ -360,6 +357,9 @@ fn main() -> Result<()> {
             stream.read(&mut buffer)?;
 
             // check for bitfield message
+            if buffer[0] == 5 {
+                // handle bitfield message
+            }
         }
 
         // send interested message
@@ -448,16 +448,13 @@ fn main() -> Result<()> {
         }
 
         let piece_hash = Sha1::digest(&piece_data);
-        let expected_hash = &torrent.info.pieces[piece_index * 20..(piece_index + 1) * 20];
-        if piece_hash.as_slice() == expected_hash {
+        let expected_hash = &torrent.info["pieces"][piece_index * 20..(piece_index + 1) * 20];
+        if piece_hash.as_slice() == expected_hash.as_bytes() {
             fs::write(output_path, &piece_data)?;
             println!("Piece {piece_index} successfully downloaded and verified");
-        } else {
-            println!("Piece {piece_index} failed verification");
         }
-
         Ok(())
     } else {
-        Err(anyhow!("Command not found: {}", command))
+        Err(anyhow!("Invalid command"))
     }
 }
