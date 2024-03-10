@@ -1,6 +1,7 @@
 use std::{collections::HashMap, env, fs, iter::Peekable};
 
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteBuf;
 use sha1::{Digest, Sha1};
 
 fn parse_ben_string<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> String {
@@ -92,7 +93,7 @@ struct TorrentInfo {
     name: String,
     #[serde(rename = "piece length")]
     piece_length: u64,
-    pieces: String,
+    pieces: ByteBuf,
 }
 
 fn main() {
