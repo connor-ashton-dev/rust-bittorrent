@@ -94,7 +94,7 @@ fn main() {
         println!("{decoded_value}");
     } else if command == "info" {
         let file_name = &args[2];
-        let bytes = fs::read(file_name).unwrap();
+        let bytes = fs::read(file_name).expect("failed here");
         let s = String::from_utf8_lossy(&bytes);
         let mut iter = s.chars().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
