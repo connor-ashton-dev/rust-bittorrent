@@ -98,8 +98,9 @@ fn main() {
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         println!(
-            "Tracker URL: {}",
-            decoded_value["announce"].as_str().unwrap()
+            "Tracker URL: {}\nLength: {}",
+            decoded_value["announce"].as_str().unwrap(),
+            decoded_value["info"]["length"].as_str().unwrap()
         );
     } else {
         println!("unknown command: {}", args[1]);
