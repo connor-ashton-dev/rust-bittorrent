@@ -268,6 +268,195 @@ fn main() -> Result<()> {
         println!("Peer ID: {}", hex::encode(peer_id));
 
         Ok(())
+    } else if command == "download_piece" {
+        let output_path = &args[3];
+        let file_name = &args[4];
+        let piece_index: usize = args[4].parse()?;
+
+        // 1. Read the torrent file
+        let bytes = fs::read(file_name)?;
+        let torrent: TorrentFile = serde_bencode::from_bytes(&bytes)?;
+
+        let info = &torrent.info;
+        let piece_length = info.piece_length;
+        let total_length = info.length;
+        let num_pieces = (total_length + piece_length - 1) / piece_length;
+
+        let this_piece_length = if piece_index < num_pieces - 1 {
+            piece_length
+        } else {
+            total_length - (num_pieces - 1) * piece_length
+        };
+
+        let info_encoded = serde_bencode::to_bytes(&info)?;
+        let mut hasher = Sha1::new();
+        hasher.update(&info_encoded);
+        let info_hash: [u8; 20] = hasher.finalize().try_into()?;
+
+        // 2. Perform the tracker request
+
+        let request: QueryParams = QueryParams {
+            peer_id: "00112233445566778899".to_string(),
+            port: 6881,
+            uploaded: 0,
+            downloaded: 0,
+            left: torrent.info.piece_length,
+            compact: 1,
+        };
+
+        let url_params = serde_urlencoded::to_string(&request)?;
+
+        let tracker_url = format!(
+            "{}?{}&info_hash={}",
+            torrent.announce,
+            url_params,
+            &urlencode(&info_hash)
+        );
+
+        let res = reqwest::blocking::get(tracker_url)?;
+        let body = res.bytes()?;
+        let decoded: TrackerResponse = serde_bencode::from_bytes(&body)?;
+        let peers = parse_ips(&decoded.peers);
+
+        // 3. Establish a connection with a peer and perform the handshake
+
+        let peer = &peers[0];
+        let p_string = "BitTorrent protocol";
+        let reserved_bytes = [0; 8];
+        let peer_id = "00112233445566778899".as_bytes();
+
+        let mut hasher = Sha1::new();
+        hasher.update(&info_encoded);
+        let handshake = Handshake {
+            length_p_string: p_string.len(),
+            p_string: p_string.to_string(),
+            reserved_bytes: reserved_bytes.into(),
+            sha1_infohash: info_hash.into(),
+            peer_id: peer_id.into(),
+        };
+
+        let mut handshake_bytes = Vec::new();
+        handshake_bytes.push(handshake.length_p_string as u8);
+        handshake_bytes.extend(handshake.p_string.as_bytes());
+        handshake_bytes.extend(&handshake.reserved_bytes);
+        handshake_bytes.extend(&handshake.sha1_infohash);
+        handshake_bytes.extend(&handshake.peer_id);
+
+        let mut stream = TcpStream::connect(peer)?;
+
+        stream.write_all(&handshake_bytes)?;
+
+        let mut response = [0; 68];
+        stream.read_exact(&mut response)?;
+
+        // 4. Exchange peer messages to request and download a piece
+        let mut buffer = vec![0; 4];
+        stream.read_exact(&mut buffer)?;
+        let message_length =
+            u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+
+        if message_length > 0 {
+            buffer.resize(message_length, 0);
+            stream.read(&mut buffer)?;
+
+            // check for bitfield message
+        }
+
+        // send interested message
+        let interested = [0u8, 0, 0, 1, 2];
+        stream.write_all(&interested)?;
+
+        // wait for unchoke message
+        loop {
+            buffer.resize(4, 0);
+            stream.read_exact(&mut buffer)?;
+            let message_length =
+                u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+
+            if message_length == 0 {
+                continue;
+            }
+
+            buffer.resize(message_length, 0);
+            stream.read_exact(&mut buffer)?;
+
+            if buffer[0] == 1 {
+                println!("Unchoked!");
+                break;
+            }
+        }
+
+        // request blocks within the piece
+        let num_blocks = (this_piece_length + (16 * 1024) - 1) / (16 * 1024);
+        for block_index in 0..num_blocks {
+            let block_begin = block_index * 16 * 1024;
+            let block_length = if block_index < num_blocks - 1 {
+                16 * 1024
+            } else {
+                this_piece_length - block_begin
+            };
+
+            let request_message = [
+                0u8,
+                0,
+                0,
+                13,
+                6, // 13 is the length of the message, 6 is the request message ID
+                (piece_index >> 24) as u8,
+                (piece_index >> 16) as u8,
+                (piece_index >> 8) as u8,
+                piece_index as u8,
+                (block_begin >> 24) as u8,
+                (block_begin >> 16) as u8,
+                (block_begin >> 8) as u8,
+                block_begin as u8,
+                (block_length >> 24) as u8,
+                (block_length >> 16) as u8,
+                (block_length >> 8) as u8,
+                block_length as u8,
+            ];
+
+            stream.write_all(&request_message)?;
+            println!("Requested block {block_index} of piece {piece_index}");
+        }
+
+        // 5. Write the piece to the output file
+        let mut piece_data = vec![0; this_piece_length];
+        let mut blocks_received = 0;
+
+        while blocks_received < num_blocks {
+            let mut length_prefix = [0u8; 4];
+            stream.read_exact(&mut length_prefix)?;
+            let message_length = u32::from_be_bytes(length_prefix) as usize;
+
+            if message_length == 0 {
+                continue;
+            }
+
+            let mut message = vec![0u8; message_length];
+            stream.read_exact(&mut message)?;
+            if message[0] == 7 {
+                let block_begin =
+                    u32::from_be_bytes([message[1], message[2], message[3], message[4]]);
+                let block_length =
+                    u32::from_be_bytes([message[5], message[6], message[7], message[8]]);
+                piece_data[block_begin as usize..(block_begin + block_length) as usize]
+                    .copy_from_slice(&message[9..]);
+                blocks_received += 1;
+                println!("Received block {blocks_received} of {num_blocks}");
+            }
+        }
+
+        let piece_hash = Sha1::digest(&piece_data);
+        let expected_hash = &torrent.info.pieces[piece_index * 20..(piece_index + 1) * 20];
+        if piece_hash.as_slice() == expected_hash {
+            fs::write(output_path, &piece_data)?;
+            println!("Piece {piece_index} successfully downloaded and verified");
+        } else {
+            println!("Piece {piece_index} failed verification");
+        }
+
+        Ok(())
     } else {
         Err(anyhow!("Command not found: {}", command))
     }
