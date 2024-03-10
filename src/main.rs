@@ -5,8 +5,10 @@ use std::{
     iter::Peekable,
 };
 
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
+use serde_urlencoded;
 use sha1::{Digest, Sha1};
 
 fn parse_ben_string<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> String {
@@ -107,7 +109,42 @@ struct TorrentFileInfo {
     pieces: ByteBuf,
 }
 
-fn main() {
+fn urlencode(t: &[u8; 20]) -> String {
+    let mut encoded = String::with_capacity(3 * t.len());
+    for &byte in t {
+        encoded.push('%');
+        encoded.push_str(&hex::encode(&[byte]));
+    }
+    encoded
+}
+
+#[derive(Serialize)]
+struct QueryParams {
+    peer_id: String,
+    port: usize,
+    uploaded: usize,
+    downloaded: usize,
+    left: usize,
+    compact: usize,
+}
+
+#[derive(Deserialize)]
+struct TrackerResponse {
+    interval: usize,
+    peers: ByteBuf,
+}
+
+fn parse_ips(ips: &[u8]) -> Vec<String> {
+    ips.chunks(6)
+        .map(|chunk| {
+            let ip = format!("{}.{}.{}.{}", chunk[0], chunk[1], chunk[2], chunk[3]);
+            let port = u16::from_be_bytes([chunk[4], chunk[5]]);
+            format!("{ip}:{port}")
+        })
+        .collect()
+}
+
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let command = &args[1];
 
@@ -116,12 +153,13 @@ fn main() {
         let mut iter = encoded_value.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         println!("{decoded_value}");
+        Ok(())
     } else if command == "info" {
         let file_name = &args[2];
         let bytes = fs::read(file_name).unwrap();
 
-        let info: TorrentFile = serde_bencode::from_bytes(&bytes).unwrap();
-        let encoded_info = serde_bencode::to_bytes(&info.info).unwrap();
+        let torrent: TorrentFile = serde_bencode::from_bytes(&bytes)?;
+        let encoded_info = serde_bencode::to_bytes(&torrent.info)?;
 
         let mut hasher = Sha1::new();
         hasher.update(encoded_info);
@@ -129,15 +167,54 @@ fn main() {
 
         println!(
             "Tracker URL: {}\nLength: {}\nInfo Hash: {}\nPiece Length: {}\nPiece Hashes:",
-            info.announce,
-            info.info.length,
+            torrent.announce,
+            torrent.info.length,
             hex::encode(hash),
-            info.info.piece_length,
+            torrent.info.piece_length,
         );
-        for hash in info.info.pieces.chunks_exact(20) {
+        for hash in torrent.info.pieces.chunks_exact(20) {
             println!("{}", hex::encode(hash));
         }
+        Ok(())
+    } else if command == "peers" {
+        let file_name = &args[2];
+        let bytes = fs::read(file_name)?;
+
+        let torrent: TorrentFile = serde_bencode::from_bytes(&bytes)?;
+        let info_encoded = serde_bencode::to_bytes(&torrent.info)?;
+
+        let request: QueryParams = QueryParams {
+            peer_id: "00112233445566778899".to_string(),
+            port: 6881,
+            uploaded: 0,
+            downloaded: 0,
+            left: torrent.info.piece_length,
+            compact: 1,
+        };
+
+        let url_params = serde_urlencoded::to_string(&request)?;
+
+        let mut hasher = Sha1::new();
+        hasher.update(&info_encoded);
+        let info_hash: [u8; 20] = hasher.finalize().try_into()?;
+
+        let tracker_url = format!(
+            "{}?{}&info_hash={}",
+            torrent.announce,
+            url_params,
+            &urlencode(&info_hash)
+        );
+
+        let res = reqwest::blocking::get(tracker_url)?;
+        let body = res.bytes()?;
+        let decoded: TrackerResponse = serde_bencode::from_bytes(&body)?;
+        let peers = parse_ips(&decoded.peers);
+        for peer in peers {
+            println!("{peer}");
+        }
+
+        Ok(())
     } else {
-        println!("unknown command: {}", args[1]);
+        Err(anyhow!("Command not found: {}", command))
     }
 }
