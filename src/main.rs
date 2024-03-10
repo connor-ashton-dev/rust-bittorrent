@@ -80,7 +80,6 @@ fn parse_ben_dict(encoded_value: &str) -> serde_json::Value {
     let mut last_key = serde_json::Value::Null;
 
     for item in data.first().unwrap().to_owned() {
-        println!("{}", item);
         if is_key {
             last_key = item;
             is_key = false;
