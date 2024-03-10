@@ -112,7 +112,7 @@ fn main() {
         let decoded_value = decode_bencoded_value(&mut iter);
         let info = decoded_value["info"].clone();
 
-        let encoded_info = serde_bencode::to_string(&info).unwrap();
+        let encoded_info = serde_bencode::to_bytes(&info).unwrap();
 
         let mut hasher = Sha1::new();
         hasher.update(encoded_info);
