@@ -107,10 +107,10 @@ fn main() {
         let hash = hasher.finalize().to_vec();
 
         println!(
-            "Tracker URL: {}\nLength: {}\nInfo Hash: {:?}",
+            "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
             decoded_value["announce"].as_str().unwrap(),
             decoded_value["info"]["length"],
-            hash
+            hex::encode(hash)
         );
     } else {
         println!("unknown command: {}", args[1]);
