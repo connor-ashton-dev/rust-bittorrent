@@ -100,7 +100,7 @@ fn main() {
         println!(
             "Tracker URL: {}\nLength: {}",
             decoded_value["announce"].as_str().unwrap(),
-            decoded_value["info"]["length"].as_str().unwrap()
+            decoded_value["info"]["length"]
         );
     } else {
         println!("unknown command: {}", args[1]);
