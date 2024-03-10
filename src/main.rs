@@ -100,17 +100,17 @@ fn main() {
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         let info = decoded_value["info"].clone();
-        let encoded = serde_bencode::to_string(&info).unwrap();
+        let encoded = serde_bencode::to_bytes(&info).unwrap();
 
         let mut hasher = Sha1::new();
-        hasher.update(encoded);
+        hasher.update(&encoded);
         let hash = hasher.finalize();
 
         println!(
-            "Tracker URL: {}\nLength: {}\nInfo Hash: {:x}",
+            "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
             decoded_value["announce"].as_str().unwrap(),
             decoded_value["info"]["length"],
-            hash
+            hex::encode(hash)
         );
     } else {
         println!("unknown command: {}", args[1]);
