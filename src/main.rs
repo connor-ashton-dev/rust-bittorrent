@@ -110,7 +110,7 @@ fn main() {
             "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
             decoded_value["announce"].as_str().unwrap(),
             decoded_value["info"]["length"],
-            hex::encode(hash)
+            hash
         );
     } else {
         println!("unknown command: {}", args[1]);
