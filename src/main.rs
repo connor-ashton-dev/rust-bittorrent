@@ -97,7 +97,7 @@ fn main() {
         let bytes = fs::read(file_name).unwrap();
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
-        println!("Tracker URL: {}", decoded_value["announce"]);
+        println!("Tracker URL: {}", decoded_value["announce"].as_str());
     } else {
         println!("unknown command: {}", args[1]);
     }
