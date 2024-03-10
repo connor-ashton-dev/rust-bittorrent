@@ -93,13 +93,13 @@ fn decode_bencoded_value<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> s
 }
 
 #[derive(Deserialize, Serialize)]
-struct MetaFile {
+struct TorrentFile {
     announce: String,
-    info: MetaFileInfo,
+    info: TorrentFileInfo,
 }
 
 #[derive(Deserialize, Serialize)]
-struct MetaFileInfo {
+struct TorrentFileInfo {
     length: usize,
     name: String,
     #[serde(rename = "piece length")]
@@ -120,7 +120,7 @@ fn main() {
         let file_name = &args[2];
         let bytes = fs::read(file_name).unwrap();
 
-        let info: MetaFile = serde_bencode::from_bytes(&bytes).unwrap();
+        let info: TorrentFile = serde_bencode::from_bytes(&bytes).unwrap();
         let encoded_info = serde_bencode::to_bytes(&info.info).unwrap();
 
         let mut hasher = Sha1::new();
@@ -128,11 +128,15 @@ fn main() {
         let hash = hasher.finalize();
 
         println!(
-            "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
+            "Tracker URL: {}\nLength: {}\nInfo Hash: {}\nPiece Length: {}\nPiece Hashes:",
             info.announce,
             info.info.length,
-            hex::encode(hash)
+            hex::encode(hash),
+            info.info.piece_length,
         );
+        for hash in info.info.pieces.chunks_exact(20) {
+            println!("{}", hex::encode(hash));
+        }
     } else {
         println!("unknown command: {}", args[1]);
     }
