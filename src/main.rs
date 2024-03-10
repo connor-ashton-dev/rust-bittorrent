@@ -85,6 +85,41 @@ fn decode_bencoded_value<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> s
     }
 }
 
+fn bencode_value(value: &serde_json::Value) -> Vec<u8> {
+    match value {
+        serde_json::Value::String(s) => {
+            let length = s.len().to_string();
+            [length.as_bytes(), b":", s.as_bytes()].concat()
+        }
+        serde_json::Value::Number(n) => {
+            let n_str = n.to_string();
+            [b"i", n_str.as_bytes(), b"e"].concat()
+        }
+        serde_json::Value::Array(arr) => {
+            let mut encoded = Vec::new();
+            encoded.push(b'l');
+            for item in arr {
+                encoded.extend_from_slice(&bencode_value(item));
+            }
+            encoded.push(b'e');
+            encoded
+        }
+        serde_json::Value::Object(obj) => {
+            let mut encoded = Vec::new();
+            let mut keys: Vec<&String> = obj.keys().collect();
+            keys.sort(); // Bencode dictionaries should have their keys sorted lexicographically
+            encoded.push(b'd');
+            for key in keys {
+                encoded.extend_from_slice(&bencode_value(&serde_json::Value::String(key.clone())));
+                encoded.extend_from_slice(&bencode_value(obj.get(key).unwrap()));
+            }
+            encoded.push(b'e');
+            encoded
+        }
+        _ => panic!("Unsupported type"),
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let command = &args[1];
@@ -100,14 +135,20 @@ fn main() {
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         let info = decoded_value["info"].clone();
+
+        // Bencode the info dictionary
+        let bencoded_info = bencode_value(&info);
+
+        // Calculate the SHA-1 hash of the bencoded info dictionary
         let mut hasher = Sha1::new();
-        hasher.update(serde_json::to_vec(&info).unwrap());
-        let hash = hasher.finalize();
+        hasher.update(&bencoded_info);
+        let hash_result = hasher.finalize();
+
         println!(
             "Tracker URL: {}\nLength: {}\nInfo Hash: {:x}",
             decoded_value["announce"].as_str().unwrap(),
             decoded_value["info"]["length"],
-            hash
+            hash_result,
         );
     } else {
         println!("unknown command: {}", args[1]);
