@@ -1,4 +1,9 @@
-use std::{collections::HashMap, env, fs, iter::Peekable};
+use std::{
+    collections::HashMap,
+    env,
+    fs::{self},
+    iter::Peekable,
+};
 
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -96,12 +101,9 @@ struct MetaFile {
 #[derive(Deserialize, Serialize)]
 struct MetaFileInfo {
     length: usize,
-    #[allow(dead_code)]
     name: String,
     #[serde(rename = "piece length")]
-    #[allow(dead_code)]
     piece_length: usize,
-    #[allow(dead_code)]
     pieces: ByteBuf,
 }
 
@@ -119,7 +121,7 @@ fn main() {
         let bytes = fs::read(file_name).unwrap();
 
         let info: MetaFile = serde_bencode::from_bytes(&bytes).unwrap();
-        let encoded_info = serde_bencode::to_bytes(&info).unwrap();
+        let encoded_info = serde_bencode::to_bytes(&info.info).unwrap();
 
         let mut hasher = Sha1::new();
         hasher.update(encoded_info);
