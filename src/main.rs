@@ -458,7 +458,10 @@ fn main() -> Result<()> {
         let piece_hash = Sha1::digest(&piece_data);
         let expected_hash = &torrent.info.pieces[piece_index * 20..(piece_index + 1) * 20];
         if piece_hash.as_slice() == expected_hash {
-            println!("Piece {piece_index} successfully downloaded and verified");
+            match fs::write(output_path, &piece_data) {
+                Ok(_) => println!("Piece {piece_index} successfully downloaded and verified"),
+                Err(e) => println!("Error writing piece {piece_index} to file: {e}"),
+            }
         } else {
             println!("Piece {piece_index} failed verification");
         }
