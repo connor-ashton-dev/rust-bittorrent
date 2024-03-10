@@ -92,6 +92,8 @@ fn main() {
         let mut iter = encoded_value.chars().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         println!("{decoded_value}");
+    } else if command == "info" {
+        println!("hi")
     } else {
         println!("unknown command: {}", args[1]);
     }
