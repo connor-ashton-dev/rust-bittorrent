@@ -79,16 +79,14 @@ fn parse_ben_dict(encoded_value: &str) -> serde_json::Value {
     let mut is_key = true;
     let mut last_key = serde_json::Value::Null;
 
-    for all in data {
-        for item in all {
-            println!("{}", item);
-            if is_key {
-                last_key = item;
-                is_key = false;
-            } else {
-                map.insert(last_key.to_string(), item);
-                is_key = true;
-            }
+    for item in data.first().unwrap().to_owned() {
+        println!("{}", item);
+        if is_key {
+            last_key = item;
+            is_key = false;
+        } else {
+            map.insert(last_key.to_string(), item);
+            is_key = true;
         }
     }
 
