@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, iter::Peekable, str::Chars};
+use std::{collections::HashMap, env, fs, iter::Peekable, str::Chars};
 
 fn parse_ben_string<'a>(iter: &mut Peekable<Chars<'a>>) -> String {
     let mut length_str = String::new();
@@ -93,7 +93,16 @@ fn main() {
         let decoded_value = decode_bencoded_value(&mut iter);
         println!("{decoded_value}");
     } else if command == "info" {
-        println!("hi")
+        let file_name = &args[2];
+        let bytes = fs::read(file_name).unwrap();
+        let s = String::from_utf8_lossy(&bytes);
+        let mut iter = s.chars().peekable();
+        let decoded_value = decode_bencoded_value(&mut iter);
+
+        println!(
+            "Tracker URL: {}\nLength: {}",
+            decoded_value["announce"], decoded_value["info"]["length"]
+        );
     } else {
         println!("unknown command: {}", args[1]);
     }
