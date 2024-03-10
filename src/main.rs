@@ -100,7 +100,6 @@ fn main() {
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         let info = decoded_value["info"].clone();
-        println!("{}", info);
         let encoded = serde_bencode::to_bytes(&info).unwrap();
 
         let mut hasher = Sha1::new();
