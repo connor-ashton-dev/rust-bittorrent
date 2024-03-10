@@ -1,8 +1,9 @@
 use std::{
     collections::HashMap,
-    env,
-    fs::{self},
+    env, fs,
+    io::{Read, Write},
     iter::Peekable,
+    net::TcpStream,
 };
 
 use anyhow::{anyhow, Result};
@@ -134,6 +135,14 @@ struct TrackerResponse {
     peers: ByteBuf,
 }
 
+struct Handshake {
+    length_p_string: usize,
+    p_string: String,
+    reserved_bytes: Vec<u8>,
+    sha1_infohash: Vec<u8>,
+    peer_id: Vec<u8>,
+}
+
 fn parse_ips(ips: &[u8]) -> Vec<String> {
     ips.chunks(6)
         .map(|chunk| {
@@ -212,6 +221,51 @@ fn main() -> Result<()> {
         for peer in peers {
             println!("{peer}");
         }
+
+        Ok(())
+    } else if command == "handshake" {
+        let file_name = &args[2];
+        let bytes = fs::read(file_name)?;
+
+        let torrent: TorrentFile = serde_bencode::from_bytes(&bytes)?;
+        let info_encoded = serde_bencode::to_bytes(&torrent.info)?;
+
+        let peer = &args[3];
+
+        let p_string = "BitTorrent protocol";
+        let reserved_bytes = [0; 8];
+        let peer_id = "00112233445566778899".as_bytes();
+
+        let mut hasher = Sha1::new();
+        hasher.update(&info_encoded);
+        let info_hash: [u8; 20] = hasher.finalize().try_into()?;
+
+        let handshake = Handshake {
+            length_p_string: p_string.len(),
+            p_string: p_string.to_string(),
+            reserved_bytes: reserved_bytes.into(),
+            sha1_infohash: info_hash.into(),
+            peer_id: peer_id.into(),
+        };
+
+        let mut handshake_bytes = Vec::new();
+        handshake_bytes.push(handshake.length_p_string as u8);
+        handshake_bytes.extend(handshake.p_string.as_bytes());
+        handshake_bytes.extend(&handshake.reserved_bytes);
+        handshake_bytes.extend(&handshake.sha1_infohash);
+        handshake_bytes.extend(&handshake.peer_id);
+
+        let mut stream = TcpStream::connect(peer)?;
+
+        stream.write_all(&handshake_bytes)?;
+
+        let mut response = [0; 68];
+        stream.read_exact(&mut response)?;
+
+        let length_p_string = response[0] as usize;
+        let peer_id = response[length_p_string + 29..length_p_string + 49].to_vec();
+
+        println!("Peer ID: {}", hex::encode(peer_id));
 
         Ok(())
     } else {
