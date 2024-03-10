@@ -87,12 +87,21 @@ fn decode_bencoded_value<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> s
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct TorrentInfo {
-    length: u64,
+#[derive(Deserialize, Serialize)]
+struct MetaFile {
+    announce: String,
+    info: MetaFileInfo,
+}
+
+#[derive(Deserialize, Serialize)]
+struct MetaFileInfo {
+    length: usize,
+    #[allow(dead_code)]
     name: String,
     #[serde(rename = "piece length")]
-    piece_length: u64,
+    #[allow(dead_code)]
+    piece_length: usize,
+    #[allow(dead_code)]
     pieces: ByteBuf,
 }
 
@@ -108,10 +117,8 @@ fn main() {
     } else if command == "info" {
         let file_name = &args[2];
         let bytes = fs::read(file_name).unwrap();
-        let mut iter = bytes.iter().peekable();
-        let decoded_value = decode_bencoded_value(&mut iter);
-        let info = decoded_value["info"].clone();
 
+        let info: MetaFile = serde_bencode::from_bytes(&bytes).unwrap();
         let encoded_info = serde_bencode::to_bytes(&info).unwrap();
 
         let mut hasher = Sha1::new();
@@ -120,8 +127,8 @@ fn main() {
 
         println!(
             "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
-            decoded_value["announce"].as_str().unwrap(),
-            decoded_value["info"]["length"],
+            info.announce,
+            info.info.length,
             hex::encode(hash)
         );
     } else {
