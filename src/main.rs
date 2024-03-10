@@ -1,5 +1,6 @@
 use std::{collections::HashMap, env, fs, iter::Peekable};
 
+use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 
 fn parse_ben_string<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> String {
@@ -85,6 +86,15 @@ fn decode_bencoded_value<'a>(iter: &mut Peekable<std::slice::Iter<'a, u8>>) -> s
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct TorrentInfo {
+    length: u64,
+    name: String,
+    #[serde(rename = "piece length")]
+    piece_length: u64,
+    pieces: String,
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let command = &args[1];
@@ -100,17 +110,18 @@ fn main() {
         let mut iter = bytes.iter().peekable();
         let decoded_value = decode_bencoded_value(&mut iter);
         let info = decoded_value["info"].clone();
-        let encoded = serde_bencode::to_bytes(&info).unwrap();
+
+        let encoded_info = serde_bencode::to_string(&info).unwrap();
 
         let mut hasher = Sha1::new();
-        hasher.update(&encoded);
+        hasher.update(encoded_info);
         let hash = hasher.finalize();
 
         println!(
-            "Tracker URL: {}\nLength: {}\nInfo Hash: {:x}",
+            "Tracker URL: {}\nLength: {}\nInfo Hash: {}",
             decoded_value["announce"].as_str().unwrap(),
             decoded_value["info"]["length"],
-            hash
+            hex::encode(hash)
         );
     } else {
         println!("unknown command: {}", args[1]);
