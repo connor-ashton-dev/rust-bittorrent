@@ -1,153 +1,96 @@
-use std::{any::Any, collections::HashMap, env, iter::Peekable, str::Chars};
+use std::{collections::HashMap, env, iter::Peekable, str::Chars};
 
-// Available if you need it!
-// use serde_bencode
+fn parse_ben_string<'a>(iter: &mut Peekable<Chars<'a>>) -> String {
+    let mut length_str = String::new();
+    let mut char = iter.next().unwrap();
+    while char != ':' {
+        length_str.push(char);
+        char = iter.next().unwrap();
+    }
 
-fn parse_ben_string(encoded_value: &str) -> serde_json::Value {
-    let colon_index = encoded_value.find(':').unwrap();
-    let number_string = &encoded_value[..colon_index];
-    let number = number_string.parse::<i64>().unwrap();
-    let string =
-        &encoded_value[colon_index + 1..colon_index + 1 + usize::try_from(number).unwrap()];
-    serde_json::Value::String(string.to_string())
+    let length = length_str.parse::<usize>().unwrap();
+    let mut string = String::with_capacity(length);
+
+    for _ in 0..length {
+        string.push(iter.next().unwrap());
+    }
+
+    string
 }
 
-fn parse_ben_int(encoded_value: &str) -> serde_json::Value {
-    let num_str = &encoded_value[1..encoded_value.find('e').unwrap()];
+fn parse_ben_int<'a>(iter: &mut Peekable<Chars<'a>>) -> serde_json::Value {
+    iter.next(); // Skip the 'i'
+    let mut num_str = String::new();
+    let mut char = iter.next().unwrap();
+    while char != 'e' {
+        num_str.push(char);
+        char = iter.next().unwrap();
+    }
     let num = num_str.parse::<i64>().unwrap();
     serde_json::Value::Number(serde_json::Number::from(num))
 }
 
-fn parse_ben_list(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
-    let mut items: Vec<serde_json::Value> = vec![];
+fn parse_ben_list<'a>(iter: &mut Peekable<Chars<'a>>) -> serde_json::Value {
+    iter.next(); // Skip the 'l'
+    let mut items = Vec::new();
 
-    while let Some(c) = iter.next() {
-        // String
-        if c.is_ascii_digit() && iter.peek().unwrap() == &':' {
-            // get length of word
-            let length = c.to_digit(10).unwrap();
-
-            // skip colon
-            iter.next();
-
-            // build string
-            let mut res = String::new();
-            for _ in 0..length {
-                let new_char = iter.next().unwrap();
-                res.push(new_char);
+    loop {
+        match iter.peek() {
+            Some('e') => {
+                iter.next(); // Consume the 'e'
+                break;
             }
-            items.push(serde_json::json!(res));
-
-        // Integer
-        } else if c == 'i' && iter.peek().unwrap().is_ascii_digit() {
-            let mut res = String::new();
-            let mut cur_char = iter.next().unwrap();
-            while cur_char != 'e' {
-                res.push(cur_char);
-                cur_char = iter.next().unwrap();
-            }
-            let num = res.parse::<i64>().unwrap();
-            items.push(serde_json::Value::Number(serde_json::Number::from(num)));
-
-            // Another list
-        } else if c == 'l' {
-            let new_items = parse_ben_list(iter);
-            items.push(new_items);
-        } else if c == 'e' {
-            return serde_json::json!(items);
+            _ => items.push(decode_bencoded_value(iter)),
         }
     }
 
-    serde_json::json!(items)
+    serde_json::Value::Array(items)
 }
 
-fn parse_ben_dict(iter: &mut Peekable<Chars<'_>>) -> serde_json::Value {
-    let mut is_key = true;
-    let mut last_key = String::new();
-    let mut map: HashMap<String, serde_json::Value> = HashMap::new();
-    let mut val = String::new();
+fn parse_ben_dict<'a>(iter: &mut Peekable<Chars<'a>>) -> serde_json::Value {
+    iter.next(); // Skip the 'd'
+    let mut map = HashMap::new();
 
-    iter.next();
-
-    while let Some(char) = iter.next() {
-        let mut tmp_val = String::new();
-        if char.is_ascii_digit() {
-            let mut length_str = String::new();
-            let mut cur_char = char;
-
-            while cur_char != ':' {
-                length_str.push(cur_char);
-                cur_char = iter.next().unwrap();
+    loop {
+        match iter.peek() {
+            Some('e') => {
+                iter.next(); // Consume the 'e'
+                break;
             }
-
-            let length = length_str.parse::<i32>().expect(&length_str);
-
-            for _ in 0..length {
-                let new_char = iter.next().unwrap();
-                tmp_val.push(new_char);
+            Some(_) => {
+                let key = parse_ben_string(iter);
+                let value = decode_bencoded_value(iter);
+                map.insert(key, value);
             }
-            val = tmp_val;
-        } else if char == 'i' && iter.peek().unwrap().is_ascii_digit() {
-            let mut res = String::new();
-            let mut cur_char = iter.next().unwrap();
-            while cur_char != 'e' {
-                res.push(cur_char);
-                cur_char = iter.next().unwrap();
-            }
-            val = res;
-        }
-
-        if is_key {
-            last_key = val.clone();
-            is_key = false;
-        } else {
-            match val.parse::<i32>() {
-                Ok(v) => {
-                    map.insert(
-                        String::from(&last_key),
-                        serde_json::Value::Number(serde_json::Number::from(v)),
-                    );
-                }
-                Err(_) => {
-                    // somethign else then hehe
-                    map.insert(
-                        String::from(&last_key),
-                        serde_json::Value::String(val.clone()),
-                    );
-                }
-            };
-            is_key = true;
+            None => panic!("Invalid dictionary format"),
         }
     }
 
     serde_json::json!(map)
 }
 
-#[allow(dead_code)]
-fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
-    let mut iter = encoded_value.chars().peekable();
-    if encoded_value.chars().next().unwrap().is_ascii_digit() {
-        parse_ben_string(encoded_value)
-    } else if encoded_value.starts_with('i') && encoded_value.ends_with('e') {
-        parse_ben_int(encoded_value)
-    } else if encoded_value.starts_with('l') && encoded_value.ends_with('e') {
-        iter.next();
-        parse_ben_list(&mut iter)
-    } else if encoded_value.starts_with('d') && encoded_value.ends_with('e') {
-        parse_ben_dict(&mut iter)
-    } else {
-        panic!("Unhandled encoded value: {encoded_value}")
+fn decode_bencoded_value<'a>(iter: &mut Peekable<Chars<'a>>) -> serde_json::Value {
+    let mut iter_clone = iter.clone();
+    match iter_clone.peek() {
+        Some(c) if c.is_ascii_digit() => {
+            let string = parse_ben_string(iter);
+            serde_json::Value::String(string)
+        }
+        Some('i') => parse_ben_int(iter),
+        Some('l') => parse_ben_list(iter),
+        Some('d') => parse_ben_dict(iter),
+        _ => panic!("Invalid format"),
     }
 }
 
-// Usage: your_bittorrent.sh decode "<encoded_value>"
 fn main() {
     let args: Vec<String> = env::args().collect();
     let command = &args[1];
 
     if command == "decode" {
         let encoded_value = &args[2];
-        let decoded_value = decode_bencoded_value(encoded_value);
+        let mut iter = encoded_value.chars().peekable();
+        let decoded_value = decode_bencoded_value(&mut iter);
         println!("{decoded_value}");
     } else {
         println!("unknown command: {}", args[1]);
